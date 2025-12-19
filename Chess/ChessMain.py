@@ -1,5 +1,7 @@
 import pygame as p
 from Chess import ChessEngine
+import ChessAI
+import random
 
 p.init()
 WIDTH = HEIGTH = 512
@@ -7,6 +9,8 @@ DIMENSION = 8
 SQ_SIZE = HEIGTH // DIMENSION
 MAX_FPS = 45
 IMAGES = {}
+
+
 def load_images():
     pieces = ['wp', 'wR', 'wN', 'wB', 'wK', 'wQ',
               'bp', 'bR', 'bN', 'bB', 'bK', 'bQ']
@@ -16,11 +20,13 @@ def load_images():
             (SQ_SIZE, SQ_SIZE)
         )
 
+
 def drawText(screen, text):
     font = p.font.SysFont("Helvetica", 32, True, False)
-    textObject = font.render(text, 0, p.Color('Black'))
+    textObject = font.render(text, 0, p.Color('Black'), p.Color('White'))  # Added background for readability
     textLocation = p.Rect(0, 0, WIDTH, HEIGTH)
     screen.blit(textObject, textObject.get_rect(center=textLocation.center))
+
 
 def main():
     screen = p.display.set_mode((WIDTH, HEIGTH))
@@ -34,12 +40,20 @@ def main():
     playerClicks = []
     animate = False
     lastMove = None
+    gameOver = False
+
+    # Player settings: True for Human, False for AI
+    playerOne = True  # White
+    playerTwo = False  # Black (AI)
+
     while running:
+        isHumanTurn = (gs.white_to_move and playerOne) or (not gs.white_to_move and playerTwo)
+
         for e in p.event.get():
             if e.type == p.QUIT:
                 running = False
             elif e.type == p.MOUSEBUTTONDOWN:
-                if not gs.checkMate and not gs.staleMate:
+                if not gameOver and isHumanTurn:
                     location = p.mouse.get_pos()
                     col = location[0] // SQ_SIZE
                     row = location[1] // SQ_SIZE
@@ -51,12 +65,9 @@ def main():
                         playerClicks.append(sqSelected)
                     if len(playerClicks) == 2:
                         move = ChessEngine.Move(playerClicks[0], playerClicks[1], gs.board)
-                        print(move.getChessNotation())
-                        valid_move_found = False
                         for validMove in validMoves:
                             if move == validMove:
                                 gs.makeMove(validMove)
-                                valid_move_found = True
                                 moveMade = True
                                 lastMove = validMove
                                 animate = True
@@ -64,11 +75,12 @@ def main():
                         sqSelected = ()
                         playerClicks = []
             elif e.type == p.KEYDOWN:
-                if e.key == p.K_c:
+                if e.key == p.K_c:  # Undo
                     gs.undoMove()
-                    animate = False
                     moveMade = True
-                elif e.key == p.K_r:
+                    animate = False
+                    gameOver = False
+                elif e.key == p.K_r:  # Reset
                     gs = ChessEngine.GameState()
                     validMoves = gs.getValidMoves()
                     sqSelected = ()
@@ -76,22 +88,43 @@ def main():
                     moveMade = False
                     animate = False
                     lastMove = None
+                    gameOver = False
+
+        # --- AI MOVE LOGIC ---
+        if not gameOver and not isHumanTurn:
+            # We pass the engine state to the recursive Minimax
+            aiMove = ChessAI.findBestMove(gs, validMoves)
+
+            if aiMove is None:
+                gameOver = True
+            else:
+                gs.makeMove(aiMove)
+                moveMade = True
+                lastMove = aiMove
+                animate = True
 
         if moveMade:
             if animate:
                 drawGameState(screen, gs, validMoves, sqSelected, lastMove)
                 animateMove(lastMove, screen, gs.board, clock)
                 animate = False
+
             validMoves = gs.getValidMoves()
+            if len(validMoves) == 0:
+                gameOver = True
             moveMade = False
+
         drawGameState(screen, gs, validMoves, sqSelected, lastMove)
-        if gs.checkMate:
-            drawText(screen, "Checkmate!")
-        elif gs.staleMate:
-            drawText(screen, "Stalemate!")
+
+        if gameOver:
+            if gs.checkMate:
+                text = "Black wins by Checkmate" if gs.white_to_move else "White wins by Checkmate"
+            else:
+                text = "Stalemate"
+            drawText(screen, text)
+
         clock.tick(MAX_FPS)
         p.display.flip()
-
 
 def drawGameState(screen, gs, validMoves, sqSelected, lastMove):
     drawBoard(screen)
@@ -119,23 +152,24 @@ def highlightSquares(screen, gs, validMoves, sqSelected, lastMove):
                 if move.startRow == r and move.startCol == c:
                     screen.blit(s, (move.endCol * SQ_SIZE, move.endRow * SQ_SIZE))
 
+
 def drawBoard(screen):
     colors = [p.Color("beige"), (184, 138, 92)]
     for r in range(DIMENSION):
         for c in range(DIMENSION):
             color = colors[((r + c) % 2)]
-            p.draw.rect(screen, color, p.Rect(c*SQ_SIZE, r*SQ_SIZE, SQ_SIZE, SQ_SIZE))
+            p.draw.rect(screen, color, p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE))
+
 
 def drawPieces(screen, board):
     for r in range(DIMENSION):
         for c in range(DIMENSION):
             piece = board[r][c]
             if piece != "--":
-                screen.blit(IMAGES[piece], p.Rect(c*SQ_SIZE, r*SQ_SIZE, SQ_SIZE, SQ_SIZE))
+                screen.blit(IMAGES[piece], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE))
 
 
 def animateMove(move, screen, board, clock):
-
     dR = move.endRow - move.startRow
     dC = move.endCol - move.startCol
     framesPerSquare = 3
@@ -154,5 +188,7 @@ def animateMove(move, screen, board, clock):
         screen.blit(IMAGES[move.pieceMoved], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE))
         p.display.flip()
         clock.tick(MAX_FPS)
+
+
 if __name__ == "__main__":
     main()
